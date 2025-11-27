@@ -1,0 +1,10 @@
+Ez egy vállalati hitel kockázatelemzési riport.
+
+A vállalat 2023-ban 95 000 000 HUF árbevételt ért el, 8,2% EBITDA marzzsal.
+A 2024-es terv 120 000 000 HUF árbevétel 10% EBITDA mellett.
+
+A meglévő hitelállomány 150 012 000 HUF, átlagos kamata 4.5%, futamideje 7 év.
+A most igényelt hitelösszeg 80 124 030 HUF, kamata 6,2%, futamideje 5 év.
+
+A vállalat 2022-ben 1,5% növekedést, 2023-ban 3,1% növekedést ért el.
+A fedezetként felajánlott ingatlan piaci értéke 200 000 000 HUF.
