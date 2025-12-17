@@ -20,8 +20,8 @@ def get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         model = SentenceTransformer(_MODEL_NAME)
-        # Növeljük a max_seq_length-et, hogy ne dobjon figyelmeztetést hosszabb szövegeknél
-        # (az underlying transformer default 128 token, itt engedünk többet).
+        # Increasing the max_seq_length
+        # Default 128 token but I raised to 256
         model.max_seq_length = 256
         _model = model
     return _model
@@ -29,19 +29,7 @@ def get_model() -> SentenceTransformer:
 
 def embed_text(text: str) -> np.ndarray:
     """
-    Get a vector embedding for an entire document.
-
-    Uses a multilingual Sentence-BERT model suitable for Hungarian business texts.
-
-    Parameters
-    ----------
-    text:
-        Preprocessed document text as a single string.
-
-    Returns
-    -------
-    np.ndarray
-        A 1D numpy array representing the document embedding.
+    Vector embedding
     """
     model = get_model()
     embedding = model.encode(text, convert_to_numpy=True)

@@ -1,43 +1,51 @@
+# This is the preprocessing + tokenization module v1.0
+# Imports:
 from __future__ import annotations
 
-import re
 from typing import List
+import re
 
+from transformers import AutoTokenizer
 
-_WORD_RE = re.compile(r"\w+", flags=re.UNICODE)
+# Multilingual NLP tokenization for HU/SI/EN inputs.
+_TOKENIZER_NAME = "xlm-roberta-base"
+_tokenizer = AutoTokenizer.from_pretrained(_TOKENIZER_NAME)
 
 
 def preprocess_text(text: str) -> str:
     """
-    Basic preprocessing for Hungarian business texts.
-
-    Steps:
-    - strip leading/trailing whitespace
-    - normalize inner whitespace to single spaces
-    - lowercase
-
-    NOTE:
-    - This is intentionally simple for an MVP.
-    - In later releases we may extend this with more sophisticated logic
-      (e.g., handling punctuation, domain-specific cleaning, etc.).
+    Simple preprocessing:
+    - whitespace normalization
+    - lower()
+    - Remove the control characters
     """
-    stripped = text.strip()
-    if not stripped:
+    if not text:
         return ""
-    normalized = " ".join(stripped.split())
-    return normalized.lower()
+
+    text = text.strip()
+    text = re.sub(r"\s+", " ", text)
+    text = text.lower()
+    return text
 
 
-def tokenize(text: str) -> List[str]:
+def tokenize_nlp(text: str) -> List[str]:
     """
-    Simple regex-based tokenization AFTER preprocess_text.
-
-    Behavior:
-    - splits on non-word characters
-    - keeps Hungarian letters and digits
-    - strips punctuation (e.g. 'huf,' -> 'huf')
+    NLP tokenization with XLM-R
     """
     if not text:
         return []
-    # \w+ a UNICODE flaggel: betűk, számok, aláhúzás – magyar ékezetes karakterekkel
-    return _WORD_RE.findall(text)
+
+    encoded = _tokenizer(
+        text,
+        add_special_tokens=False,
+        return_attention_mask=False,
+        return_token_type_ids=False
+    )
+
+    token_ids = encoded["input_ids"]
+    tokens = _tokenizer.convert_ids_to_tokens(token_ids)
+
+    # remove prefix
+    cleaned = [tok.lstrip("▁") for tok in tokens if tok.strip("▁").strip()]
+
+    return cleaned

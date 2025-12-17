@@ -1,102 +1,111 @@
 from __future__ import annotations
 
-import re
 from collections import Counter
 from typing import Any, Dict, Iterable, List
+import math
+import re
 
 import numpy as np
 
 
-# -------------------------
-# Szöveges hasonlóság (cosine)
-# -------------------------
+
 def cosine_similarity_score(vec1: np.ndarray, vec2: np.ndarray) -> float:
     """
-    Compute cosine similarity between two 1D numpy vectors.
+    Cosine similarity between the two 1D vector
 
-    Returns
-    -------
-    float
-        Cosine similarity value between -1 and 1.
-        In this use-case it will typically be between 0 and 1.
-
-    Notes
-    -----
-    If either vector has zero norm, the similarity is defined as 0.0.
     """
     v1 = np.asarray(vec1, dtype=float).ravel()
     v2 = np.asarray(vec2, dtype=float).ravel()
 
+    if v1.size == 0 or v2.size == 0:
+        return 0.0
+
     norm1 = np.linalg.norm(v1)
     norm2 = np.linalg.norm(v2)
-
     if norm1 == 0.0 or norm2 == 0.0:
         return 0.0
 
-    similarity = float(np.dot(v1, v2) / (norm1 * norm2))
-    return similarity
+    sim = float(np.dot(v1, v2) / (norm1 * norm2))
+    return sim
 
 
-# -------------------------
-# Kulcsszó kinyerés
-# -------------------------
 def extract_keywords(tokens: Iterable[str], top_n: int = 20) -> List[str]:
     """
-    Very simple keyword extraction based on term frequency.
-
-    Parameters
-    ----------
-    tokens:
-        A sequence of preprocessed tokens.
-    top_n:
-        Return at most this many keywords.
-
-    Behavior
-    --------
-    - Count frequencies with Counter.
-    - Ignore purely numeric tokens (e.g., token.isdigit()) because future
-      releases may handle numerics separately.
-    - Sort by frequency (descending), then alphabetically for ties.
-    - Return list of the most common tokens, as strings.
+    keyword extraction based on appearences
     """
-    filtered_tokens: List[str] = [t for t in tokens if not t.isdigit()]
-    counter = Counter(filtered_tokens)
+    filtered = [t for t in tokens if not t.isdigit()]
+    counter = Counter(filtered)
+    if not counter:
+        return []
 
-    sorted_items = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
-
-    keywords = [token for token, _ in sorted_items[:top_n]]
-    return keywords
+    items = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [token for token, _count in items[:top_n]]
 
 
-# -------------------------
-# Okosabb numerikus parser
-# -------------------------
+# Numerical extraction
+
+_AMOUNT_PATTERN = re.compile(
+    r"(\d[\d\s\u00A0]*)(?=\s*(huf|ft|forint|eur|usd))",
+    flags=re.IGNORECASE
+)
+
+_PERCENT_PATTERN = re.compile(
+    r"(\d[\d\s\u00A0]*([.,]\d+)?)(?=\s*%)",
+    flags=re.IGNORECASE
+)
+
+_YEAR_PATTERN = re.compile(
+    r"\b(19[0-9]{2}|20[0-9]{2}|2100)\b"
+)
+
+
+_GENERIC_NUMBER_PATTERN = re.compile(
+    r"\d[\d\s\u00A0]*([.,]\d+)?"
+)
+
+
 def _normalize_number_string(raw: str) -> float | None:
     """
-    Normalize a raw number string to float.
+    NRaw num string to float
 
-    Steps:
-    - remove spaces and non-breaking spaces between digit groups
-    - replace ',' with '.'
+    - removing whitespaces
+    - ',' -> '.' switcvh
     """
-    cleaned = raw.replace(" ", "").replace("\u00A0", "").replace(",", ".")
+    cleaned = raw.replace("\u00A0", " ")
+    cleaned = cleaned.replace(" ", "")
+    cleaned = cleaned.replace(",", ".")
     try:
         return float(cleaned)
     except ValueError:
         return None
 
 
-def _extract_numbers_by_type(text: str) -> Dict[str, List[float]]:
+def _span_overlaps(span: tuple[int, int], used_spans: List[tuple[int, int]]) -> bool:
+    """helper to check the span overlay"""
+    s1, e1 = span
+    for s2, e2 in used_spans:
+        if not (e1 <= s2 or e2 <= s1):
+            return True
+    return False
+
+
+def extract_numeric_tokens_by_type(text: str) -> Dict[str, List[float]]:
     """
-    Extract numeric values from text and categorize them.
+    Extracting numerical values and categorize
 
-    Types:
-    - "amount": numbers followed by currency markers (huf, ft, eur, usd)
-    - "percent": numbers followed by '%'
-    - "year": 4-digit years (1900-2100)
-    - "other": any remaining numbers
+    Categories:
+        - amounts: (HUF, FT, FORINT, EUR, USD)
+        - percent: (num + '%')
+        - year: 4 character numers between 1900-2100
+        - other: Every other number
 
-    The function ensures that overlapping matches are not double-counted.
+    Return:
+        {
+          "amount": [...],
+          "percent": [...],
+          "year": [...],
+          "other": [...]
+        }
     """
     result: Dict[str, List[float]] = {
         "amount": [],
@@ -104,94 +113,83 @@ def _extract_numbers_by_type(text: str) -> Dict[str, List[float]]:
         "year": [],
         "other": [],
     }
+
     used_spans: List[tuple[int, int]] = []
 
-    def span_overlaps(start: int, end: int) -> bool:
-        for s, e in used_spans:
-            if not (end <= s or start >= e):
-                return True
-        return False
-
-    def add_match(kind: str, match: re.Match) -> None:
-        start, end = match.span("num")
-        if span_overlaps(start, end):
-            return
-
-        raw = match.group("num")
-        value = _normalize_number_string(raw)
-        if value is None:
-            return
-
-        used_spans.append((start, end))
-        result.setdefault(kind, []).append(value)
-
-    # 1) Percents: 5,5%, 1.14 %, stb.
-    percent_pattern = re.compile(
-        r"(?P<num>[-+]?\d[\d \u00A0]*(?:[.,]\d+)?)[ ]*%",
-        flags=re.IGNORECASE,
-    )
-    for m in percent_pattern.finditer(text):
-        add_match("percent", m)
-
-    # 2) Amounts: 100 000 000 HUF, 5 000 ft, stb.
-    amount_pattern = re.compile(
-        r"(?P<num>[-+]?\d[\d \u00A0]*(?:[.,]\d+)?)[ ]*(huf|ft|eur|usd)\b",
-        flags=re.IGNORECASE,
-    )
-    for m in amount_pattern.finditer(text):
-        add_match("amount", m)
-
-    # 3) Years: 4 digit (1900–2100)
-    year_pattern = re.compile(
-        r"\b(?P<num>(19\d{2}|20\d{2}|2100))\b",
-        flags=re.IGNORECASE,
-    )
-    for m in year_pattern.finditer(text):
-        add_match("year", m)
-
-    # 4) Generic numbers (other)
-    generic_pattern = re.compile(
-        r"(?P<num>[-+]?\d[\d \u00A0]*(?:[.,]\d+)?)",
-        flags=re.IGNORECASE,
-    )
-    for m in generic_pattern.finditer(text):
-        start, end = m.span("num")
-        if span_overlaps(start, end):
+    # 1) Amounts
+    for match in _AMOUNT_PATTERN.finditer(text):
+        span = match.span(1)
+        if _span_overlaps(span, used_spans):
             continue
+        num_str = match.group(1)
+        value = _normalize_number_string(num_str)
+        if value is not None:
+            result["amount"].append(value)
+            used_spans.append(span)
 
-        # Ha a szám előtt közvetlenül betű van (pl. 'q1'), akkor hagyjuk ki
-        if start > 0 and text[start - 1].isalpha():
+    # 2) Percentages
+    for match in _PERCENT_PATTERN.finditer(text):
+        span = match.span(1)
+        if _span_overlaps(span, used_spans):
             continue
+        num_str = match.group(1)
+        value = _normalize_number_string(num_str)
+        if value is not None:
+            result["percent"].append(value)
+            used_spans.append(span)
 
-        add_match("other", m)
+    # 3) Dates
+    for match in _YEAR_PATTERN.finditer(text):
+        span = match.span(1)
+        if _span_overlaps(span, used_spans):
+            continue
+        num_str = match.group(1)
+        value = _normalize_number_string(num_str)
+        if value is not None:
+            result["year"].append(value)
+            used_spans.append(span)
+
+    # 4) Other numbers
+    for match in _GENERIC_NUMBER_PATTERN.finditer(text):
+        span = match.span(0)
+        if _span_overlaps(span, used_spans):
+            continue
+        num_str = match.group(0)
+        value = _normalize_number_string(num_str)
+        if value is not None:
+            result["other"].append(value)
+            used_spans.append(span)
 
     return result
 
 
-def _compute_numeric_stats(ref_values: List[float], gen_values: List[float]) -> Dict[str, Any]:
+# Numerical similarity
+
+def _compute_numeric_stats_for_values(ref_vals: List[float], gen_vals: List[float]) -> Dict[str, Any]:
     """
-    Compute Jaccard-like similarity and overlaps for numeric values.
+    Jaccard-similarity
+
     """
-    def to_rounded_set(values: List[float]) -> set[float]:
+    def _to_rounded_set(values: List[float]) -> set[float]:
         return {round(v, 6) for v in values}
 
-    ref_set = to_rounded_set(ref_values)
-    gen_set = to_rounded_set(gen_values)
+    ref_set = _to_rounded_set(ref_vals)
+    gen_set = _to_rounded_set(gen_vals)
 
     union = ref_set | gen_set
-    intersection = ref_set & gen_set
+    inter = ref_set & gen_set
 
     if not union:
-        numeric_similarity = 1.0
+        similarity = 1.0
     else:
-        numeric_similarity = float(len(intersection) / len(union))
+        similarity = len(inter) / len(union)
 
-    numeric_common = sorted(intersection)
+    numeric_common = sorted(inter)
     numeric_missing = sorted(ref_set - gen_set)
     numeric_added = sorted(gen_set - ref_set)
 
     return {
-        "numeric_similarity": numeric_similarity,
+        "numeric_similarity": float(similarity),
         "ref_numeric_values": sorted(ref_set),
         "gen_numeric_values": sorted(gen_set),
         "numeric_common": numeric_common,
@@ -200,58 +198,49 @@ def _compute_numeric_stats(ref_values: List[float], gen_values: List[float]) -> 
     }
 
 
-def compare_numeric_tokens(ref_text: str, gen_text: str, tolerance: float = 1e-6) -> Dict[str, Any]:
+def compute_numeric_similarity(
+    ref_nums: Dict[str, List[float]],
+    gen_nums: Dict[str, List[float]],
+) -> Dict[str, Any]:
     """
-    Compare numeric content between two documents (smarter parser).
+    Summarizing the numerical outputs
 
-    Parameters
-    ----------
-    ref_text:
-        Preprocessed reference document text.
-    gen_text:
-        Preprocessed generated document text.
-    tolerance:
-        Reserved for future use (e.g. value-based tolerance).
-        Currently we use simple rounding-based matching.
+    Input:
+        ref_nums: {"amount": [...], "percent": [...], "year": [...], "other": [...]}
+        gen_nums: same
 
-    Returns
-    -------
-    Dict[str, Any]
+    Output:
         {
-          "numeric_similarity": float,            # overall similarity
-          "ref_numeric_values": list[float],
-          "gen_numeric_values": list[float],
-          "numeric_common": list[float],
-          "numeric_missing": list[float],
-          "numeric_added": list[float],
+          "numeric_similarity": float,
+          "ref_numeric_values": [...],
+          "gen_numeric_values": [...],
+          "numeric_common": [...],
+          "numeric_missing": [...],
+          "numeric_added": [...],
           "by_type": {
-              "amount": {...},   # same structure as above
-              "percent": {...},
-              "year": {...},
-              "other": {...},
+              "amount": { ... },
+              "percent": { ... },
+              "year": { ... },
+              "other": { ... },
           }
         }
     """
-    ref_by_type = _extract_numbers_by_type(ref_text)
-    gen_by_type = _extract_numbers_by_type(gen_text)
+    all_types = sorted(set(ref_nums.keys()) | set(gen_nums.keys()))
 
-    # Per-type stats
-    all_types = sorted(set(ref_by_type.keys()) | set(gen_by_type.keys()))
-    by_type_stats: Dict[str, Any] = {}
-    all_ref_values: List[float] = []
-    all_gen_values: List[float] = []
+    by_type: Dict[str, Any] = {}
+    all_ref: List[float] = []
+    all_gen: List[float] = []
 
     for kind in all_types:
-        ref_values = ref_by_type.get(kind, [])
-        gen_values = gen_by_type.get(kind, [])
+        ref_vals = ref_nums.get(kind, []) or []
+        gen_vals = gen_nums.get(kind, []) or []
 
-        all_ref_values.extend(ref_values)
-        all_gen_values.extend(gen_values)
+        all_ref.extend(ref_vals)
+        all_gen.extend(gen_vals)
 
-        by_type_stats[kind] = _compute_numeric_stats(ref_values, gen_values)
+        stats = _compute_numeric_stats_for_values(ref_vals, gen_vals)
+        by_type[kind] = stats
 
-    # Overall stats (összes típus együtt)
-    overall = _compute_numeric_stats(all_ref_values, all_gen_values)
-
-    overall["by_type"] = by_type_stats
-    return overall
+    overall_stats = _compute_numeric_stats_for_values(all_ref, all_gen)
+    overall_stats["by_type"] = by_type
+    return overall_stats
