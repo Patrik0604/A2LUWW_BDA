@@ -47,9 +47,25 @@ def _format_similarity_block(result: Dict[str, Any]) -> str:
 
 
 def _format_keyword_block(result: Dict[str, Any], max_items: int = 15) -> str:
-    common = result.get("common_keywords", [])
-    missing = result.get("missing_keywords", [])
-    added = result.get("added_keywords", [])
+    keywords = result.get("keywords", {})
+
+    common = keywords.get("common", [])
+    missing = keywords.get("missing", [])
+    added = keywords.get("added", [])
+
+    lines = ["Keywords comparison"]
+
+    def _fmt(title: str, items: list[str]) -> None:
+        if items:
+            lines.append(f"- {title}: {', '.join(items[:max_items])}")
+        else:
+            lines.append(f"- {title}: none")
+
+    _fmt("Common", common)
+    _fmt("Missing", missing)
+    _fmt("Added", added)
+
+    return "\n".join(lines)
 
     lines: List[str] = []
     lines.append("Keywords")

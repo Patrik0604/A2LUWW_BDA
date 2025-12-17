@@ -81,8 +81,8 @@ async def compare_files(
         rougeL_f1=r3(scores["rougeL_f1"]),
         bertscore_f1=r3(scores["bertscore_f1"]),
         numeric_jaccard=r3(scores["numeric_jaccard"]),
-        textual_index=r3(scores["textual_composite"]),
-        overall_index=r3(scores["overall_composite"]),
+        textual_index=r3(scores["textual_index"]),
+        overall_index=r3(scores["overall_index"]),
     )
 
     return response

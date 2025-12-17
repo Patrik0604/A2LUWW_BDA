@@ -1,4 +1,3 @@
-# ===== file: main.py =====
 from __future__ import annotations
 
 from src.docsim.compare import compare_documents
