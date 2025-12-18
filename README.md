@@ -13,3 +13,13 @@
 - Numeric consistency check (numeric extraction + Jaccard similarity)
 - Composite textual and overall similarity indices
 - FastAPI-based REST interface
+
+### API
+- POST /compare-files with two .txt files (reference, generated).
+#### Response JSON:
+- cosine_similarity
+- rougeL_f1
+- bertscore_f1
+- numeric_jaccard
+- textual_index
+- overall_index
